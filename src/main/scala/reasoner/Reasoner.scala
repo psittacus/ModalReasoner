@@ -1,14 +1,77 @@
 package reasoner
 
-import dto.{Bracket, Conjunction, Formula, Implication, NegatedFormula}
+import dto.{Bottom, Bracket, Conjunction, Formula, Implication, NegatedFormula}
 
 import scala.collection.mutable.ListBuffer
 
 case class Reasoner(formulae: ListBuffer[Formula]) {
 
-    def negatedAndRule(formulae: ListBuffer[Formula]): Option[List[ListBuffer[Formula]]] = {
+    def isFormulaSatisfiable(formulae: ListBuffer[Formula]): Boolean = {
+        
+    }
+    
+    /*
+     * Axiom rule
+     */
+    private def axiomRule(formulae: ListBuffer[Formula]): ListBuffer[Formula] = {
+        var clash = false 
+        
+        for(formula <- formulae) {
+            for(i <- formulae.indexOf(formula) until formulae.size) {
+                if(NegatedFormula(formula).equals(formulae.apply(i))) {
+                    clash = true
+                }
+            }
+        }
+        
+        if(clash) {
+            ListBuffer(Bottom())
+        } else {
+            formulae
+        }
+    }
+    
+    /*
+     * Double negation rule
+     */
+    private def doubleNegationRule(formulae: ListBuffer[Formula]): ListBuffer[Formula] = {
+        val result: ListBuffer[Formula] = new ListBuffer[Formula]
+        
+        for (formula <- formulae) {
+            val r = singleFormulaDoubleNegationRule(formula, 0)
+            if(r.isEmpty) {
+                result.append(formula)
+            } else {
+                result.append(r.get)
+            }
+        }
+        
+        result
+    }
+    
+    private def singleFormulaDoubleNegationRule(formula: Formula, negations: Integer): Option[Formula] = {
+        var result: Option[Formula] = null
+        formula match {
+            case NegatedFormula(f) => 
+                if(negations == 1) {
+                    result = Some(f)
+                } else {
+                    result = singleFormulaDoubleNegationRule(f, negations + 1)
+                }
+            case Bracket(f) => 
+                result = singleFormulaDoubleNegationRule(f, negations)
+            case _ => 
+                result = None
+        }
+        
+        result
+    }
+    /*
+     * Negated and rule 
+     */
+    private def negatedAndRule(formulae: ListBuffer[Formula]): Option[List[ListBuffer[Formula]]] = {
         var applied = false
-        var allFormulae: ListBuffer[Formula] = formulae
+        val allFormulae: ListBuffer[Formula] = formulae
         var result: List[ListBuffer[Formula]] = null
         var twoCandidates: ListBuffer[Formula] = new ListBuffer[Formula]
         
@@ -68,8 +131,8 @@ case class Reasoner(formulae: ListBuffer[Formula]) {
     }
 
     //AND rule
-    def andRule(formulae: ListBuffer[Formula]): ListBuffer[Formula] = {
-        var result: ListBuffer[Formula] = new ListBuffer[Formula]
+    private def andRule(formulae: ListBuffer[Formula]): ListBuffer[Formula] = {
+        val result: ListBuffer[Formula] = new ListBuffer[Formula]
 
         for (formula <- formulae) {
             formula match {
