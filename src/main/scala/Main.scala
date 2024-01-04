@@ -18,6 +18,12 @@ object Main {
             throw ParseError("Could not parse formula completely")
         }
         
-        val reasoner = Reasoner(formula)
+        val reasoner = Reasoner().isFormulaSatisfiable(formula)
+        
+        if(reasoner) {
+            println("satisfiable")
+        } else {
+            println("not satisfiable")
+        }
     }   
 }
