@@ -1,19 +1,44 @@
 package reasoner
 
-import dto.{Atom, Bottom, BoxFormula, Bracket, Conjunction, Disjunction, Formula, Implication, NegatedFormula}
+import dto.{Atom, Bottom, BoxFormula, Bracket, BracketClosed, Conjunction, Disjunction, Formula, Implication, NegatedFormula, Top}
 
 import scala.collection.mutable.ListBuffer
 
 case class Reasoner() {
 
+
+    private def printFormulae(formulae: ListBuffer[Formula]) = {
+        for (formula <- formulae) {
+            println(
+                formula.print()
+            )
+        }
+        println("-----")
+    }
+
     def isFormulaSatisfiable(formulae: ListBuffer[Formula]): Boolean = {
-        var tempFormulae: ListBuffer[Formula] = formulae
-        var newFormulae: ListBuffer[Formula] = new ListBuffer[Formula]
+        var tempFormulae: ListBuffer[Formula] = new ListBuffer[Formula]
+        var newFormulae: ListBuffer[Formula] = formulae
         while (!tempFormulae.equals(newFormulae)) {
             tempFormulae = newFormulae
-            newFormulae = beautifyFormulae(formulae)
+            newFormulae = beautifyFormulae(newFormulae)
+            newFormulae = axiomRule(newFormulae)
+            if (newFormulae.nonEmpty && newFormulae.head.equals(Bottom())) {
+                //if we had a clash
+                return false
+            }
             newFormulae = andRule(newFormulae)
+            newFormulae = axiomRule(newFormulae)
+            if (newFormulae.nonEmpty && newFormulae.head.equals(Bottom())) {
+                //if we had a clash
+                return false
+            }
             newFormulae = doubleNegationRule(newFormulae)
+            newFormulae = axiomRule(newFormulae)
+            if (newFormulae.nonEmpty && newFormulae.head.equals(Bottom())) {
+                //if we had a clash
+                return false
+            }
             val o1 = negatedAndRule(newFormulae)
             if(o1.nonEmpty) {
                 val formList = o1.get
@@ -31,10 +56,41 @@ case class Reasoner() {
                         return false
                     }
                 }
+                return true
+            }
+            newFormulae = axiomRule(newFormulae)
+            if(newFormulae.nonEmpty && newFormulae.head.equals(Bottom())) {
+                //if we had a clash
+                return false
             }
         }
 
-        ???
+        if(newFormulae != null && newFormulae.nonEmpty) {
+            for(formula <- newFormulae) {
+                formula match {
+                    case Atom(name) =>
+                        if(name.equals("⊥")) {
+                            return false
+                        }
+                    case NegatedFormula(formula) =>
+                        isTopInFormula(formula)
+                    case _ =>
+                }
+            }
+        }
+
+        true
+    }
+
+    private def isTopInFormula(toSearch: Formula): Boolean = {
+        toSearch match {
+            case Bracket(c) =>
+                isTopInFormula(c)
+            case Atom("⊤") =>
+                true
+            case _ =>
+                false
+        }
     }
 
     /*
@@ -58,11 +114,11 @@ case class Reasoner() {
             case Implication(left, right) =>
                 NegatedFormula(Conjunction(singleFormulaBeautifyFormula(left), NegatedFormula(singleFormulaBeautifyFormula(right))))
             case Bracket(f) =>
-                singleFormulaBeautifyFormula(f)
+                Bracket(singleFormulaBeautifyFormula(f))
             case BoxFormula(f) =>
                 BoxFormula(singleFormulaBeautifyFormula(f))
             case NegatedFormula(f) =>
-                NegatedFormula(singleFormulaBeautifyFormula(f))    
+                NegatedFormula(singleFormulaBeautifyFormula(f))
             case _ =>
                 formula
         }
@@ -98,13 +154,13 @@ case class Reasoner() {
 
         }
 
-        var list: List[ListBuffer[Formula]] = List()
+        var list: ListBuffer[ListBuffer[Formula]] = ListBuffer()
         
         for(formula <- children) {
-            list = (result ++ ListBuffer(formula)) :: list
+            list = list.addOne(ListBuffer(formula) ++ result)
         }
         
-        Some(list)
+        Some(list.toList)
     }
 
     private def singleFormulaNotBoxRule(formula: Formula, negated: Boolean): Option[(Formula, Boolean)] = {
@@ -152,6 +208,8 @@ case class Reasoner() {
 
     private def propositionalSaturated(formula: Formula, negationCounter: Integer): Boolean = {
         formula match {
+            case BoxFormula(_) =>
+                true
             case Bracket(f) =>
                 propositionalSaturated(f, negationCounter)
             case NegatedFormula(f) =>
@@ -175,7 +233,7 @@ case class Reasoner() {
 
         for (formula <- formulae) {
             for (i <- formulae.indexOf(formula) until formulae.size) {
-                if (NegatedFormula(formula).equals(formulae.apply(i))) {
+                if (NegatedFormula(formula).equals(formulae.apply(i)) || NegatedFormula(formulae.apply(i)).equals(formula)) {
                     clash = true
                 }
             }
@@ -219,7 +277,7 @@ case class Reasoner() {
                     if(opt.nonEmpty) {
                         val (form, appl) = opt.get
                         if(appl) {
-                            result = Some(form,applied)
+                            result = Some(form,appl)
                         } else {
                             result = Some(NegatedFormula(form),applied)
                         }
@@ -240,7 +298,7 @@ case class Reasoner() {
                     result = None
                 }
             case BoxFormula(f) =>
-                val form = singleFormulaDoubleNegationRule(f, negations)
+                val form = singleFormulaDoubleNegationRule(f, 0)
                 if(form.nonEmpty) {
                     result = Some(BoxFormula(form.get._1),applied)
                 } else {
@@ -270,7 +328,7 @@ case class Reasoner() {
      */
     private def negatedAndRule(formulae: ListBuffer[Formula]): Option[List[ListBuffer[Formula]]] = {
         var applied = false
-        val allFormulae: ListBuffer[Formula] = formulae
+        val allFormulae: ListBuffer[Formula] = formulae.clone()
         var result: List[ListBuffer[Formula]] = null
         var twoCandidates: ListBuffer[Formula] = new ListBuffer[Formula]
 
@@ -311,7 +369,7 @@ case class Reasoner() {
 
         if (applied) {
             if(twoCandidates.nonEmpty && twoCandidates.size == 2) {
-                result = List(allFormulae ++ ListBuffer(twoCandidates.head), allFormulae ++ ListBuffer(twoCandidates.last))
+                result = List(allFormulae ++ ListBuffer(NegatedFormula(twoCandidates.head)), allFormulae ++ ListBuffer(NegatedFormula(twoCandidates.last)))
             }
             
             Some(result)

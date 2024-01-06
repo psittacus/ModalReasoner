@@ -1,6 +1,6 @@
 package parser
 
-import dto.{Atom, BoxFormula, Bracket, Conjunction, Disjunction, Formula, Implication, NegatedFormula}
+import dto.{Atom, BoxFormula, Bracket, BracketClosed, Conjunction, Disjunction, Formula, Implication, NegatedFormula}
 import exceptions.{ParseError, SyntaxError}
 
 import scala.collection.mutable.ListBuffer
@@ -8,7 +8,7 @@ import scala.util.matching.Regex
 
 object Parser {
     private var formulae: ListBuffer[Formula] = new ListBuffer()
-    private val atom: Regex = "^[a-zA-Z].+$".r
+    private val atom: Regex = "^[a-zA-Z⊥⊤].*$".r
     private val box: Regex = "^\\\\Box.+$".r
     private val diamond: Regex = "^\\\\Diamond.+$".r
     private val bracketOpen: Regex = "^\\(.+".r
@@ -17,7 +17,6 @@ object Parser {
     private val or: Regex = "^\\\\lor.+$".r
     private val impl: Regex = "^\\\\implies.+$".r
     private val neg: Regex = "^\\\\neg.+$".r
-    //TODO add negation
 
     /**
      * Plan: Traverse the input, extract every part of the cnf formula:
@@ -56,6 +55,8 @@ object Parser {
                     val name = rest.charAt(0)
                     rest = rest.drop(1)
                     formulae = formulae.append(Atom(name.toString))
+                case and() =>
+                    rest = rest.drop(5)
                 case other => throw ParseError("Expected Box, Diamond, ( or atom, but got [" + other + "]")
             }
         }
@@ -63,6 +64,7 @@ object Parser {
         (rest, formulae)
     }
 
+    //TODO Conjunction, Disjunction und Implication werden nicht correct geparsed: \Diamond p \implies \Diamond q wird \Diamond(p\implies\Diamond q)
     private def recursiveParsing(input: String, brackets: Integer): (String, Formula) = {
         var rest = input
         var formula: Formula = null
@@ -79,20 +81,60 @@ object Parser {
             case box() =>
                 val (r, f) = recursiveParsing(rest.drop(4), brackets)
                 rest = r
-                formula = BoxFormula(f)
+                f match {
+                    case Conjunction(left, right) =>
+                        formula = Conjunction(BoxFormula(left), right)
+                    case Disjunction(left, right) =>
+                        formula = Disjunction(BoxFormula(left), right)
+                    case Implication(left, right) =>
+                        formula = Implication(BoxFormula(left), right)
+                    case _ =>
+                        formula = BoxFormula(f)
+                }
             case diamond() =>
                 val (r, f) = recursiveParsing(rest.drop(8), brackets)
                 rest = r
-                formula = NegatedFormula(BoxFormula(NegatedFormula(f)))
+                f match {
+                    case Conjunction(left, right) =>
+                        formula = Conjunction(NegatedFormula(BoxFormula(NegatedFormula(left))), right)
+                    case Disjunction(left, right) =>
+                        formula = Disjunction(NegatedFormula(BoxFormula(NegatedFormula(left))), right)
+                    case Implication(left, right) =>
+                        formula = Implication(NegatedFormula(BoxFormula(NegatedFormula(left))), right)
+                    case _ =>
+                        formula = NegatedFormula(BoxFormula(NegatedFormula(f)))
+                }
             case bracketOpen() =>
                 val (r, f) = recursiveParsing(rest.drop(1), brackets + 1)
                 rest = r
+                //e.g.:             (p \lor (q \land r) \lor \neg q)
+                // and we are here:         -----------
                 formula = Bracket(f)
+                if(brackets > 0) {
+                    val (re, fo) = recursiveParsing(rest, brackets)
+                    if(fo != null) {
+                        fo match {
+                            case Conjunction(_, right) =>
+                                formula = Conjunction(formula, right)
+                            case Disjunction(_, right) =>
+                                formula = Conjunction(formula, right)
+                            case Implication(_, right) =>
+                                formula = Implication(formula, right)
+                            case other =>
+                                throw ParseError("Expected Conjunction, Disjunction or Implication, got: " + other)
+                        }
+                    }
+                    rest = re
+                }
             case bracketClosed() =>
                 if (brackets > 0) {
+                    /*
                     val (r, f) = recursiveParsing(rest.drop(1), brackets - 1)
                     rest = r
                     formula = f
+                    */
+                    rest = rest.drop(1)
+                    formula = null
                 } else {
                     throw SyntaxError("There seems to be one \")\" to much")
                 }
@@ -131,17 +173,17 @@ object Parser {
                  if (brackets > 0) {
                     val (r, f) = recursiveParsing(rest, brackets)
                     f match {
-                        case Conjunction(l, r) =>
-                            if (l == null) {
-                                formula = Conjunction(Atom(name.toString), r)
+                        case Conjunction(left, right) =>
+                            if (left == null) {
+                                formula = Conjunction(Atom(name.toString), right)
                             }
-                        case Disjunction(l, r) =>
-                            if (l == null) {
-                                formula = Disjunction(Atom(name.toString), r)
+                        case Disjunction(left, right) =>
+                            if (left == null) {
+                                formula = Disjunction(Atom(name.toString), right)
                             }
-                        case Implication(l, r) =>
-                            if (l == null) {
-                                formula = Implication(Atom(name.toString), r)
+                        case Implication(left, right) =>
+                            if (left == null) {
+                                formula = Implication(Atom(name.toString), right)
                             }
                         case _ => 
                             formula = Atom(name.toString)
