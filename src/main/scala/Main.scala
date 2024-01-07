@@ -2,6 +2,7 @@ import exceptions.ParseError
 import parser.Parser
 import reasoner.Reasoner
 
+import java.time.LocalDateTime
 import scala.io.Source
 
 object Main {
@@ -17,13 +18,16 @@ object Main {
         if (!rest.isEmpty()) {
             throw ParseError("Could not parse formula completely")
         }
-        
+        val start = System.currentTimeMillis()
         val reasoner = Reasoner().isFormulaSatisfiable(formula)
-        
+        val elapsed = System.currentTimeMillis() - start
+
         if(reasoner) {
             println("satisfiable")
         } else {
             println("not satisfiable")
         }
+
+        println(elapsed.toString)
     }   
 }
